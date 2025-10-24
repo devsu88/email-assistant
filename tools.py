@@ -8,11 +8,23 @@ This module defines three specialized agents and one handoff agent:
 - EmailHandoffAgent: orchestrates the workflow between the three agents
 """
 
-from agents import Agent, Runner
+from agents import Agent, Runner, input_guardrail, GuardrailFunctionOutput
 import os
 import asyncio
 import threading
+import datetime
 from typing import Dict, Any
+from pydantic import BaseModel
+
+
+class ContentCheckOutput(BaseModel):
+    """
+    Output model for content safety guardrail.
+    """
+    is_malicious: bool
+    detected_categories: list[str]
+    severity: str
+    reason: str
 
 
 def create_classifier_agent(api_key: str) -> Agent:
@@ -39,6 +51,52 @@ def create_classifier_agent(api_key: str) -> Agent:
         
         Analyze the email content carefully and return only the category name.
         """,
+        model="gpt-4o-mini"
+    )
+    
+    return agent
+
+
+def create_content_guardrail_agent(api_key: str) -> Agent:
+    """
+    Creates a specialized agent for content safety guardrail.
+    
+    Args:
+        api_key (str): OpenAI API key for authentication
+        
+    Returns:
+        Agent: Configured OpenAI Agent for content safety checking
+    """
+    os.environ["OPENAI_API_KEY"] = api_key
+    
+    agent = Agent(
+        name="Content Safety Guardrail",
+        instructions="""
+        You are a Content Safety Guardrail agent. Your task is to analyze email content for malicious, harmful, or offensive content.
+        
+        Check for the following categories of problematic content:
+        
+        Standard OpenAI Categories:
+        - hate: Hate speech, discrimination, or targeting based on protected characteristics
+        - violence: Threats of violence, graphic violence, or promoting violence
+        - sexual: Sexual content, explicit material, or inappropriate sexual references
+        - self-harm: Content promoting self-harm, suicide, or dangerous activities
+        
+        Business Email Specific Categories:
+        - phishing: Attempts to steal credentials, fake links, or impersonation
+        - scam: Fraudulent schemes, fake offers, or financial scams
+        - harassment: Bullying, intimidation, or persistent unwanted contact
+        - spam: Unsolicited commercial content or irrelevant promotional material
+        
+        For each detected issue:
+        - Set is_malicious to True if any problematic content is found
+        - List all detected categories in detected_categories
+        - Set severity: "low" (minor issues), "medium" (moderate concerns), "high" (serious problems), "critical" (immediate danger)
+        - Provide a clear reason explaining what was detected
+        
+        Return only the structured analysis, no additional commentary.
+        """,
+        output_type=ContentCheckOutput,
         model="gpt-4o-mini"
     )
     
@@ -106,6 +164,87 @@ def create_reply_generator_agent(api_key: str) -> Agent:
     )
     
     return agent
+
+
+@input_guardrail
+async def guardrail_against_malicious_content(ctx, agent, message):
+    """
+    Input guardrail function that checks for malicious content in email input.
+    
+    Args:
+        ctx: Context object
+        agent: The agent being guarded
+        message: The input message to check
+        
+    Returns:
+        GuardrailFunctionOutput: Result of the guardrail check
+    """
+    try:
+        # Get API key from environment
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            # If no API key available, allow processing to continue
+            return GuardrailFunctionOutput(
+                output_info={"guardrail_status": "no_api_key"},
+                tripwire_triggered=False
+            )
+        
+        # Create the content safety guardrail agent
+        guardrail_agent = create_content_guardrail_agent(api_key)
+        
+        # Run the guardrail agent
+        result = await Runner.run(guardrail_agent, message, context=ctx.context)
+        content_check = result.final_output
+        
+        # Check if malicious content was detected
+        is_malicious = content_check.is_malicious
+        
+        if is_malicious:
+            # Log the blocked attempt
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"flagged_content/guardrail_blocked_{timestamp}.txt"
+            
+            # Ensure flagged_content directory exists
+            os.makedirs("flagged_content", exist_ok=True)
+            
+            # Create detailed log entry
+            log_content = f"""GUARDRAIL BLOCKED CONTENT - {timestamp}
+========================================
+
+Detected Categories: {', '.join(content_check.detected_categories)}
+Severity Level: {content_check.severity}
+Reason: {content_check.reason}
+
+Original Message:
+{message}
+
+Guardrail Agent Analysis:
+{content_check}
+"""
+            
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(log_content)
+            
+            print(f"Content blocked by guardrail. Logged to: {log_filename}")
+        
+        return GuardrailFunctionOutput(
+            output_info={
+                "guardrail_status": "checked",
+                "is_malicious": is_malicious,
+                "detected_categories": content_check.detected_categories,
+                "severity": content_check.severity,
+                "reason": content_check.reason
+            },
+            tripwire_triggered=is_malicious
+        )
+        
+    except Exception as e:
+        print(f"Guardrail error: {e}")
+        # If guardrail fails, allow processing to continue but log the error
+        return GuardrailFunctionOutput(
+            output_info={"guardrail_status": "error", "error": str(e)},
+            tripwire_triggered=False
+        )
 
 
 def create_email_processor_agent(api_key: str) -> Agent:
@@ -201,6 +340,7 @@ def create_email_orchestrator_agent(api_key: str) -> Agent:
         """,
         tools=tools,
         handoffs=handoffs,
+        input_guardrails=[guardrail_against_malicious_content],
         model="gpt-4o-mini"
     )
     
@@ -369,8 +509,23 @@ def process_email_with_handoff_agent(email_text: str, api_key: str) -> Dict[str,
     except Exception as e:
         error_message = str(e)
         
-        # Provide user-friendly error messages
-        if "api_key" in error_message.lower() or "authentication" in error_message.lower():
+        # Check if this is a guardrail-related error
+        if "guardrail" in error_message.lower() or "tripwire" in error_message.lower():
+            # Extract guardrail information if available
+            if hasattr(e, 'output_info') and isinstance(e.output_info, dict):
+                detected_categories = e.output_info.get('detected_categories', [])
+                severity = e.output_info.get('severity', 'unknown')
+                reason = e.output_info.get('reason', 'Content blocked by safety guardrail')
+                
+                if detected_categories:
+                    categories_text = ', '.join(detected_categories)
+                    error_message = f"Content blocked by safety guardrail. Detected issues: {categories_text} (Severity: {severity}). Reason: {reason}"
+                else:
+                    error_message = f"Content blocked by safety guardrail. Reason: {reason}"
+            else:
+                error_message = "Content blocked by safety guardrail. The email contains potentially harmful, offensive, or inappropriate content that cannot be processed."
+        # Provide user-friendly error messages for other errors
+        elif "api_key" in error_message.lower() or "authentication" in error_message.lower():
             error_message = "Invalid OpenAI API key. Please check your API key and try again."
         elif "rate" in error_message.lower() or "limit" in error_message.lower():
             error_message = "Rate limit exceeded. Please wait a moment and try again."
