@@ -108,9 +108,45 @@ def create_reply_generator_agent(api_key: str) -> Agent:
     return agent
 
 
-def create_handoff_agent(api_key: str) -> Agent:
+def create_email_processor_agent(api_key: str) -> Agent:
     """
-    Creates the handoff agent that orchestrates the workflow.
+    Creates the email processor agent that handles the final processing.
+    This is the handoff agent that receives the processed email.
+    
+    Args:
+        api_key (str): OpenAI API key for authentication
+        
+    Returns:
+        Agent: Configured OpenAI Agent for final email processing
+    """
+    os.environ["OPENAI_API_KEY"] = api_key
+    
+    agent = Agent(
+        name="Email Processor",
+        instructions="""
+        You are an Email Processor. You receive processed email data and format it for final output.
+        
+        You receive:
+        - Category: The email category (Inquiry, Complaint, Feedback, Other)
+        - Summary: Two-sentence summary of the email
+        - Reply: Professional reply suggestion
+        
+        Format the final response in this exact structure:
+        Category: [category]
+        Summary: [summary]
+        Reply: [reply]
+        """,
+        model="gpt-4o-mini",
+        handoff_description="Process and format email analysis results"
+    )
+    
+    return agent
+
+
+def create_email_orchestrator_agent(api_key: str) -> Agent:
+    """
+    Creates the email orchestrator agent that coordinates the workflow.
+    This agent uses the 3 specialized agents as tools and hands off to the processor.
     
     Args:
         api_key (str): OpenAI API key for authentication
@@ -120,19 +156,51 @@ def create_handoff_agent(api_key: str) -> Agent:
     """
     os.environ["OPENAI_API_KEY"] = api_key
     
+    # Create the specialized agents
+    classifier_agent = create_classifier_agent(api_key)
+    summarizer_agent = create_summarizer_agent(api_key)
+    reply_agent = create_reply_generator_agent(api_key)
+    
+    # Create the email processor agent for handoff
+    email_processor = create_email_processor_agent(api_key)
+    
+    # Convert agents to tools using .as_tool() method
+    tool1 = classifier_agent.as_tool(
+        tool_name="email_classifier_agent", 
+        tool_description="Classifies business emails into categories (Inquiry, Complaint, Feedback, Other)"
+    )
+    tool2 = summarizer_agent.as_tool(
+        tool_name="email_summarizer_agent", 
+        tool_description="Creates concise two-sentence summaries of email content"
+    )
+    tool3 = reply_agent.as_tool(
+        tool_name="reply_generator_agent", 
+        tool_description="Generates professional reply suggestions based on email category and summary"
+    )
+    
+    # Define tools and handoffs
+    tools = [tool1, tool2, tool3]
+    handoffs = [email_processor]
+    
+    # Create the orchestrator agent
     agent = Agent(
-        name="Email Handoff Agent",
+        name="Email Orchestrator",
         instructions="""
-        You are the handoff agent responsible for orchestrating email processing workflow.
+        You are an Email Orchestrator at Email Assistant. Your goal is to process business emails using the specialized agent tools.
         
-        Your task is to:
-        1. First, hand off the email to the Email Classifier Agent to get the category
-        2. Then, hand off the email to the Email Summarizer Agent to get the summary
-        3. Finally, hand off both the category and summary to the Reply Generator Agent to get the reply
+        Follow these steps carefully:
+        1. Classify Email: Use the email_classifier_agent tool to categorize the email (Inquiry, Complaint, Feedback, Other)
+        2. Summarize Email: Use the email_summarizer_agent tool to create a two-sentence summary
+        3. Generate Reply: Use the reply_generator_agent tool to create a professional reply suggestion
+        4. Handoff for Processing: Pass the results to the 'Email Processor' agent for final formatting
         
-        Always use the handoff mechanism to delegate tasks to the specialized agents.
-        Return the final results in a structured format.
+        Crucial Rules:
+        - You must use the agent tools to process the email — do not process them yourself
+        - You must hand off the results to the Email Processor for final formatting
+        - Ensure all three steps (classify, summarize, generate reply) are completed
         """,
+        tools=tools,
+        handoffs=handoffs,
         model="gpt-4o-mini"
     )
     
@@ -186,9 +254,10 @@ def run_agent_in_thread(agent: Agent, input_text: str) -> str:
     return result_container[0]
 
 
-def process_email_with_agents(email_text: str, api_key: str) -> Dict[str, Any]:
+def process_email_with_handoff_agent(email_text: str, api_key: str) -> Dict[str, Any]:
     """
-    Processes an email using the multi-agent architecture.
+    Processes an email using the orchestrator agent that coordinates the workflow.
+    The orchestrator agent uses the 3 specialized agents as tools and hands off to the processor.
     
     Args:
         email_text (str): The email content to process
@@ -198,28 +267,45 @@ def process_email_with_agents(email_text: str, api_key: str) -> Dict[str, Any]:
         Dict[str, Any]: Dictionary containing category, summary, and reply
     """
     try:
-        print("Starting multi-agent email processing...")
+        print("Starting orchestrator agent email processing...")
         
-        # Create all agents
-        classifier_agent = create_classifier_agent(api_key)
-        summarizer_agent = create_summarizer_agent(api_key)
-        reply_agent = create_reply_generator_agent(api_key)
+        # Create the orchestrator agent that coordinates the workflow
+        orchestrator_agent = create_email_orchestrator_agent(api_key)
         
-        # Step 1: Classify the email
-        print("Step 1: Classifying email...")
-        category = run_agent_in_thread(classifier_agent, email_text)
-        category = category.strip()
+        # The orchestrator agent will coordinate the workflow using tools and handoffs
+        result = run_agent_in_thread(orchestrator_agent, email_text)
         
-        # Step 2: Summarize the email
-        print("Step 2: Summarizing email...")
-        summary = run_agent_in_thread(summarizer_agent, email_text)
-        summary = summary.strip()
+        print(f"Orchestrator agent raw output: {result}")
         
-        # Step 3: Generate reply
-        print("Step 3: Generating reply...")
-        reply_input = f"Category: {category}\nSummary: {summary}\nOriginal Email: {email_text}"
-        reply = run_agent_in_thread(reply_agent, reply_input)
-        reply = reply.strip()
+        # Parse the orchestrator agent's structured response
+        lines = result.strip().split('\n')
+        
+        category = "Other"
+        summary = "Unable to generate summary"
+        reply = "Unable to generate reply"
+        
+        # Parse the orchestrator agent's structured response
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Look for structured output from orchestrator agent
+            if line.startswith("Category:"):
+                category = line.replace("Category:", "").strip()
+            elif line.startswith("Summary:"):
+                summary = line.replace("Summary:", "").strip()
+            elif line.startswith("Reply:"):
+                reply = line.replace("Reply:", "").strip()
+        
+        # Format the reply text to render \n characters as actual line breaks
+        if reply and reply != "Unable to generate reply":
+            # Replace literal \n with actual line breaks
+            reply = reply.replace('\\n', '\n')
+            # Clean up any double line breaks and format properly
+            reply = '\n'.join(line.rstrip() for line in reply.split('\n'))
+        
+        print(f"Parsed results - Category: {category}, Summary: {summary}, Reply: {reply}")
         
         return {
             'success': True,

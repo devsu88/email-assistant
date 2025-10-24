@@ -6,7 +6,7 @@ following the pattern from the OpenAI Agents SDK notebook.
 """
 
 from typing import Dict, Any
-from tools import process_email_with_agents
+from tools import process_email_with_handoff_agent
 
 
 def process_email(email_text: str, api_key: str) -> Dict[str, Any]:
@@ -38,5 +38,5 @@ def process_email(email_text: str, api_key: str) -> Dict[str, Any]:
             'error': 'OpenAI API key is required. Please enter your API key.'
         }
     
-    # Use the multi-agent architecture
-    return process_email_with_agents(email_text, api_key)
+    # Use the handoff agent architecture
+    return process_email_with_handoff_agent(email_text, api_key)

@@ -1,16 +1,17 @@
 # 📧 Email Assistant Agent
 
-An AI-powered email processing application built with OpenAI Agents SDK and Gradio. This application automatically classifies, summarizes, and generates professional reply suggestions for business emails.
+An AI-powered email processing application built with OpenAI Agents SDK and Gradio. This application automatically classifies, summarizes, and generates professional reply suggestions for business emails using a sophisticated multi-agent architecture.
 
 ## 🚀 Features
 
 - **Email Classification**: Automatically categorizes emails into Inquiry, Complaint, Feedback, or Other
 - **Smart Summarization**: Creates concise two-sentence summaries of email content
 - **Reply Generation**: Suggests professional, contextually appropriate responses
-- **Multi-Agent Architecture**: Three specialized agents working in sequence for optimal results
+- **Multi-Agent Architecture**: 5 specialized agents with proper handoff mechanism for optimal results
 - **User-Friendly Interface**: Clean two-column Gradio interface with examples
 - **Content Flagging**: Manual flagging system for inappropriate content
 - **External Examples**: Email examples loaded from external text file
+- **HTML Formatting**: Proper rendering of email replies with line breaks
 
 ## 🛠️ Technical Stack
 
@@ -93,8 +94,8 @@ agent = Agent(
 ```
 email-assistant/
 ├── app.py              # Main Gradio application with two-column layout
-├── agent.py            # Multi-agent orchestration
-├── tools.py            # Three specialized agents (classifier, summarizer, reply generator)
+├── agent.py            # Multi-agent orchestration wrapper
+├── tools.py            # 5 specialized agents with handoff mechanism
 ├── email_examples.txt  # Email examples loaded from external file
 ├── flagged_content/    # Directory for flagged inappropriate content
 ├── requirements.txt    # Python dependencies
@@ -103,19 +104,22 @@ email-assistant/
 
 ## 🔍 How It Works
 
-1. **Multi-Agent Architecture**: Three specialized agents work in sequence:
+1. **Multi-Agent Architecture**: 5 specialized agents with proper handoff mechanism:
    - `EmailClassifierAgent`: Categorizes emails into business categories
    - `EmailSummarizerAgent`: Creates concise two-sentence summaries
    - `ReplyGeneratorAgent`: Generates professional reply suggestions
+   - `EmailProcessorAgent`: Handles final formatting and output
+   - `EmailOrchestratorAgent`: Coordinates the workflow using tools and handoffs
 
-2. **Agent Orchestration**: The system processes emails in three steps:
-   - First, the classifier agent analyzes and categorizes the email
-   - Then, the summarizer agent creates a concise summary
-   - Finally, the reply generator creates a professional response
+2. **Agent Orchestration**: The system processes emails using the OpenAI Agents SDK pattern:
+   - **Email Orchestrator** receives the email input
+   - **Uses Tools**: Calls the 3 specialized agents as tools (classifier, summarizer, reply generator)
+   - **Handoff Mechanism**: Delegates final processing to the Email Processor agent
+   - **Structured Output**: Returns formatted results with category, summary, and reply
 
 3. **User Interface**: Gradio provides a clean two-column interface:
    - **Left Column**: API key input, email content, examples, and controls
-   - **Right Column**: Analysis results with copy and flag functionality
+   - **Right Column**: Analysis results with HTML formatting and flag functionality
 
 ## 🛡️ Security & Privacy
 
@@ -166,7 +170,19 @@ John
 ### Output:
 - **Category**: Complaint
 - **Summary**: Customer is experiencing login issues with their account and needs urgent assistance to access their account for an important project.
-- **Suggested Reply**: Thank you for reaching out regarding your account access issues. I understand how frustrating this must be, and I want to help resolve this quickly for you. Please try clearing your browser cache and cookies, and if the problem persists, I'll escalate this to our technical team immediately.
+- **Suggested Reply**: 
+  ```
+  Subject: Re: Issue with my account
+  
+  Dear John,
+  
+  Thank you for reaching out regarding your account access issues. I understand how frustrating this must be, and I want to help resolve this quickly for you.
+  
+  Please try clearing your browser cache and cookies, and if the problem persists, I'll escalate this to our technical team immediately.
+  
+  Best regards,
+  Support Team
+  ```
 
 ## 🤝 Contributing
 
