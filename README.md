@@ -7,11 +7,13 @@ An AI-powered email processing application built with OpenAI Agents SDK and Grad
 - **Email Classification**: Automatically categorizes emails into Inquiry, Complaint, Feedback, or Other
 - **Smart Summarization**: Creates concise two-sentence summaries of email content
 - **Reply Generation**: Suggests professional, contextually appropriate responses
-- **Multi-Agent Architecture**: 5 specialized agents with proper handoff mechanism for optimal results
+- **Multi-Agent Architecture**: 6 specialized agents with proper handoff mechanism for optimal results
+- **🛡️ Content Safety Guardrail**: Advanced input guardrail that blocks malicious, harmful, or offensive content
 - **User-Friendly Interface**: Clean two-column Gradio interface with examples
 - **Content Flagging**: Manual flagging system for inappropriate content
-- **External Examples**: Email examples loaded from external text file
+- **External Examples**: Email examples loaded from external text file (including test cases for guardrail)
 - **HTML Formatting**: Proper rendering of email replies with line breaks
+- **Security Logging**: Automatic logging of blocked content attempts with detailed analysis
 
 ## 🛠️ Technical Stack
 
@@ -27,6 +29,13 @@ An AI-powered email processing application built with OpenAI Agents SDK and Grad
 - Internet connection for API calls
 
 ## 🚀 Quick Start
+
+### 🌐 Try the Live Demo
+
+**Experience the Email Assistant with Content Safety Guardrail:**
+- 🔗 **[Live Demo on Hugging Face Spaces](https://huggingface.co/spaces/devsu/email-assistant)**
+- Test the guardrail with the included malicious email examples
+- No setup required - just enter your OpenAI API key and start processing emails!
 
 ### Local Development
 
@@ -95,29 +104,37 @@ agent = Agent(
 email-assistant/
 ├── app.py              # Main Gradio application with two-column layout
 ├── agent.py            # Multi-agent orchestration wrapper
-├── tools.py            # 5 specialized agents with handoff mechanism
-├── email_examples.txt  # Email examples loaded from external file
-├── flagged_content/    # Directory for flagged inappropriate content
+├── tools.py            # 6 specialized agents with handoff mechanism and guardrail
+├── email_examples.txt  # Email examples loaded from external file (including guardrail test cases)
+├── flagged_content/    # Directory for flagged inappropriate content and guardrail logs
 ├── requirements.txt    # Python dependencies
 └── README.md          # This file
 ```
 
 ## 🔍 How It Works
 
-1. **Multi-Agent Architecture**: 5 specialized agents with proper handoff mechanism:
+1. **Multi-Agent Architecture**: 6 specialized agents with proper handoff mechanism:
+   - `ContentSafetyGuardrailAgent`: Analyzes input for malicious, harmful, or offensive content
    - `EmailClassifierAgent`: Categorizes emails into business categories
    - `EmailSummarizerAgent`: Creates concise two-sentence summaries
    - `ReplyGeneratorAgent`: Generates professional reply suggestions
    - `EmailProcessorAgent`: Handles final formatting and output
    - `EmailOrchestratorAgent`: Coordinates the workflow using tools and handoffs
 
-2. **Agent Orchestration**: The system processes emails using the OpenAI Agents SDK pattern:
-   - **Email Orchestrator** receives the email input
+2. **Content Safety Pipeline**: Advanced guardrail system protects against:
+   - **Standard Categories**: hate speech, violence, sexual content, self-harm
+   - **Business-Specific**: phishing attempts, scams, harassment, spam
+   - **Automatic Logging**: All blocked attempts are logged with detailed analysis
+   - **Severity Levels**: low, medium, high, critical classification
+
+3. **Agent Orchestration**: The system processes emails using the OpenAI Agents SDK pattern:
+   - **Input Guardrail**: Content safety check runs BEFORE any processing
+   - **Email Orchestrator** receives the email input (if safe)
    - **Uses Tools**: Calls the 3 specialized agents as tools (classifier, summarizer, reply generator)
    - **Handoff Mechanism**: Delegates final processing to the Email Processor agent
    - **Structured Output**: Returns formatted results with category, summary, and reply
 
-3. **User Interface**: Gradio provides a clean two-column interface:
+4. **User Interface**: Gradio provides a clean two-column interface:
    - **Left Column**: API key input, email content, examples, and controls
    - **Right Column**: Analysis results with HTML formatting and flag functionality
 
@@ -125,8 +142,11 @@ email-assistant/
 
 - **API Key Security**: Your OpenAI API key is only used for the current session and is not stored
 - **Data Privacy**: Email content is sent to OpenAI for processing but not stored locally
+- **Content Safety Guardrail**: Advanced input filtering blocks malicious content before processing
+- **Automatic Security Logging**: All blocked attempts are automatically logged with detailed analysis
 - **Content Flagging**: Manual flagging system saves inappropriate content to `flagged_content/` directory
 - **Error Handling**: Comprehensive error handling for API failures and invalid inputs
+- **Guardrail Categories**: Protection against hate speech, violence, phishing, scams, harassment, and self-harm content
 
 ## 🐛 Troubleshooting
 
@@ -144,6 +164,12 @@ email-assistant/
    - Check your internet connection
    - Verify OpenAI services are operational
 
+4. **"Content blocked by safety guardrail" Error**:
+   - The email contains potentially harmful, offensive, or inappropriate content
+   - Check the specific categories and severity level mentioned in the error
+   - Review the logged details in `flagged_content/guardrail_blocked_TIMESTAMP.txt`
+   - Ensure your email content is appropriate for business communication
+
 ### Debug Mode
 
 To enable debug logging, set the environment variable:
@@ -153,7 +179,7 @@ export GRADIO_DEBUG=1
 
 ## 📝 Example Usage
 
-### Input Email:
+### Input Email (Safe Content):
 ```
 Subject: Issue with my account
 
@@ -183,6 +209,25 @@ John
   Best regards,
   Support Team
   ```
+
+### Input Email (Blocked by Guardrail):
+```
+Subject: URGENT: Click here to verify your account
+
+Dear Valued Customer,
+
+Your account has been suspended due to suspicious activity. To restore access immediately, please click the link below and enter your login credentials:
+
+http://fake-bank-security-verification.com/verify-account
+
+This is urgent - failure to verify within 24 hours will result in permanent account closure.
+
+Bank Security Team
+```
+
+### Output (Blocked):
+- **Error**: Content blocked by safety guardrail. Detected issues: phishing (Severity: high). Reason: Suspicious link and urgent verification request typical of phishing attempts.
+- **Logging**: Details saved to `flagged_content/guardrail_blocked_TIMESTAMP.txt`
 
 ## 🤝 Contributing
 
