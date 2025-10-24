@@ -275,37 +275,88 @@ def process_email_with_handoff_agent(email_text: str, api_key: str) -> Dict[str,
         # The orchestrator agent will coordinate the workflow using tools and handoffs
         result = run_agent_in_thread(orchestrator_agent, email_text)
         
-        print(f"Orchestrator agent raw output: {result}")
+        print("=" * 80)
+        print("DEBUG: RAW OUTPUT FROM ORCHESTRATOR AGENT")
+        print("=" * 80)
+        print(f"Raw output length: {len(result)} characters")
+        print(f"Raw output content:\n{result}")
+        print("=" * 80)
         
         # Parse the orchestrator agent's structured response
         lines = result.strip().split('\n')
+        
+        print("DEBUG: PARSING STRUCTURED RESPONSE")
+        print("=" * 80)
+        print(f"Number of lines to parse: {len(lines)}")
+        for i, line in enumerate(lines):
+            print(f"Line {i+1}: '{line}'")
+        print("=" * 80)
         
         category = "Other"
         summary = "Unable to generate summary"
         reply = "Unable to generate reply"
         
         # Parse the orchestrator agent's structured response
-        for line in lines:
+        current_field = None
+        reply_lines = []
+        
+        for i, line in enumerate(lines):
             line = line.strip()
             if not line:
+                if current_field == "reply":
+                    reply_lines.append("")  # Preserve empty lines in reply
                 continue
                 
             # Look for structured output from orchestrator agent
             if line.startswith("Category:"):
                 category = line.replace("Category:", "").strip()
+                print(f"DEBUG: Found Category: '{category}'")
+                current_field = "category"
             elif line.startswith("Summary:"):
                 summary = line.replace("Summary:", "").strip()
+                print(f"DEBUG: Found Summary: '{summary}'")
+                current_field = "summary"
             elif line.startswith("Reply:"):
-                reply = line.replace("Reply:", "").strip()
+                # Start collecting reply content
+                reply_content = line.replace("Reply:", "").strip()
+                reply_lines = [reply_content] if reply_content else []
+                current_field = "reply"
+                print(f"DEBUG: Started collecting Reply: '{reply_content}'")
+            elif current_field == "reply":
+                # Continue collecting reply content
+                reply_lines.append(line)
+                print(f"DEBUG: Added to Reply: '{line}'")
+        
+        # Join all reply lines
+        if reply_lines:
+            reply = '\n'.join(reply_lines)
+            print(f"DEBUG: Final Reply assembled: '{reply}'")
+        else:
+            reply = "Unable to generate reply"
+        
+        print("DEBUG: PARSING RESULTS")
+        print("=" * 80)
+        print(f"Category: '{category}' (length: {len(category)})")
+        print(f"Summary: '{summary}' (length: {len(summary)})")
+        print(f"Reply: '{reply}' (length: {len(reply)})")
+        print("=" * 80)
         
         # Format the reply text to render \n characters as actual line breaks
         if reply and reply != "Unable to generate reply":
+            print("DEBUG: FORMATTING REPLY TEXT")
+            print("=" * 80)
+            print(f"Original reply: '{reply}'")
+            
             # Replace literal \n with actual line breaks
             reply = reply.replace('\\n', '\n')
+            print(f"After \\n replacement: '{reply}'")
+            
             # Clean up any double line breaks and format properly
             reply = '\n'.join(line.rstrip() for line in reply.split('\n'))
+            print(f"After formatting: '{reply}'")
+            print("=" * 80)
         
-        print(f"Parsed results - Category: {category}, Summary: {summary}, Reply: {reply}")
+        print(f"Final parsed results - Category: {category}, Summary: {summary}, Reply: {reply}")
         
         return {
             'success': True,
